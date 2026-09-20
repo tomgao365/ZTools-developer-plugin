@@ -11,6 +11,7 @@ import './events/allCodeEvent'
 import { dispatchDevProjectsRefreshRequested } from '@/events/allCodeEvent'
 
 if (window.ztools) {
+  console.log('[ztools]', window.ztools)
   initZtoolsBaseEventHandler();
 
   // 统一对 zTools onPluginEnter 事件进行派发, 内部不要再对 ztools.onPluginEnter 进行监听

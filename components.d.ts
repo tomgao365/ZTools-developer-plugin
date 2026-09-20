@@ -17,6 +17,7 @@ declare module 'vue' {
     CommonEmptyState: typeof import('./src/components/CommonEmptyState/CommonEmptyState.vue')['default']
     CommonSectionCard: typeof import('./src/components/CommonSectionCard/CommonSectionCard.vue')['default']
     ConfettiOverlay: typeof import('./src/components/ConfettiOverlay/ConfettiOverlay.vue')['default']
+    ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
     ElCheckboxGroup: typeof import('element-plus/es')['ElCheckboxGroup']
@@ -37,6 +38,9 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     TextEllipsis: typeof import('./src/components/TextEllipsis/TextEllipsis.vue')['default']
   }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
+  }
 }
 
 // For TSX support
@@ -46,6 +50,7 @@ declare global {
   const CommonEmptyState: typeof import('./src/components/CommonEmptyState/CommonEmptyState.vue')['default']
   const CommonSectionCard: typeof import('./src/components/CommonSectionCard/CommonSectionCard.vue')['default']
   const ConfettiOverlay: typeof import('./src/components/ConfettiOverlay/ConfettiOverlay.vue')['default']
+  const ElAlert: typeof import('element-plus/es')['ElAlert']
   const ElButton: typeof import('element-plus/es')['ElButton']
   const ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
   const ElCheckboxGroup: typeof import('element-plus/es')['ElCheckboxGroup']

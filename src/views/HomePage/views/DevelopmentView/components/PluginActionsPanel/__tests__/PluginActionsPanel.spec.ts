@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, Teleport } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PluginActionsPanel from '../PluginActionsPanel.vue'
 
@@ -7,27 +7,66 @@ const { messageErrorMock } = vi.hoisted(() => ({
   messageErrorMock: vi.fn()
 }))
 
-vi.mock('element-plus', () => ({
-  ElMessage: Object.assign(
-    vi.fn(({ message, type }) => {
-      if (type === 'error') {
-        messageErrorMock(message)
+vi.mock('element-plus', () => {
+  /** 创建透传默认插槽的轻量 stub 组件。 */
+  const passthrough = (name: string) =>
+    defineComponent({
+      name,
+      setup(_, { slots }) {
+        return () => h('div', { class: name }, slots.default?.())
+      }
+    })
+
+  /** 创建仅在展开时渲染内容的 dialog stub（teleport 到 body）。 */
+  const dialogStub = (name: string) =>
+    defineComponent({
+      name,
+      props: {
+        modelValue: { type: Boolean, default: false }
+      },
+      setup(props, { slots }) {
+        return () =>
+          h(Teleport, { to: 'body' }, [
+            props.modelValue
+              ? h('div', { class: name }, [
+                  slots.header?.(),
+                  slots.default?.(),
+                  slots.footer?.()
+                ])
+              : null
+          ])
+      }
+    })
+
+  return {
+    ElMessage: Object.assign(
+      vi.fn(({ message, type }) => {
+        if (type === 'error') {
+          messageErrorMock(message)
+        }
+      }),
+      {
+        error: messageErrorMock
+      }
+    ),
+    ElLoadingDirective: {},
+    ElTooltip: defineComponent({
+      name: 'ElTooltip',
+      setup(_, { slots }) {
+        return () => h('div', { class: 'el-tooltip' }, [
+          slots.default?.(),
+          slots.content?.()
+        ])
       }
     }),
-    {
-      error: messageErrorMock
-    }
-  ),
-  ElTooltip: defineComponent({
-    name: 'ElTooltip',
-    setup(_, { slots }) {
-      return () => h('div', { class: 'el-tooltip' }, [
-        slots.default?.(),
-        slots.content?.()
-      ])
-    }
-  })
-}))
+    ElDialog: dialogStub('el-dialog-stub'),
+    ElForm: passthrough('el-form-stub'),
+    ElFormItem: passthrough('el-form-item-stub'),
+    ElInput: passthrough('el-input-stub'),
+    ElButton: passthrough('el-button-stub'),
+    ElAlert: passthrough('el-alert-stub')
+  }
+})
 
 const findCardByTitle = (wrapper: ReturnType<typeof mount>, title: string) => {
   return wrapper.findAll('.card-atom').find((card) => card.text().includes(title))
@@ -219,5 +258,90 @@ describe('PluginActionsPanel', () => {
 
     expect(wrapper.find('.i-z-folder-open').exists()).toBe(true)
     expect(wrapper.find('.i-z-services').exists()).toBe(true)
+  })
+
+  it('launches the first feature command without featureCode when the open card is clicked', async () => {
+    const launch = vi.fn().mockResolvedValue({ success: true })
+    window.ztools = {
+      internal: {
+        getDevProjects: vi.fn(),
+        getRunningPlugins: vi.fn(),
+        revealInFinder: vi.fn(),
+        launch
+      }
+    } as unknown as typeof window.ztools
+
+    const wrapper = mount(PluginActionsPanel, {
+      props: {
+        plugin: basePlugin
+      }
+    })
+
+    await findCardByTitle(wrapper, '打开')?.trigger('click')
+    await flushPromises()
+
+    expect(launch).toHaveBeenCalledWith({
+      path: basePlugin.path,
+      type: 'plugin'
+    })
+  })
+
+  it('shows Message.error when launch is missing on the host', async () => {
+    window.ztools = {
+      internal: {
+        getDevProjects: vi.fn(),
+        getRunningPlugins: vi.fn(),
+        revealInFinder: vi.fn()
+      }
+    } as unknown as typeof window.ztools
+
+    const wrapper = mount(PluginActionsPanel, {
+      props: {
+        plugin: basePlugin
+      }
+    })
+
+    await findCardByTitle(wrapper, '打开')?.trigger('click')
+    await flushPromises()
+
+    expect(messageErrorMock).toHaveBeenCalledWith('宿主服务不可用')
+  })
+
+  it('disables the open card when the plugin is not installed in dev mode', () => {
+    const wrapper = mount(PluginActionsPanel, {
+      props: {
+        plugin: {
+          ...basePlugin,
+          isDevModeInstalled: false
+        }
+      }
+    })
+
+    expect(findCardByTitle(wrapper, '打开')?.attributes('disabled')).toBeDefined()
+  })
+
+  it('opens the commands dialog from the trailing list icon without triggering the card click', async () => {
+    const launch = vi.fn()
+    window.ztools = {
+      internal: {
+        getDevProjects: vi.fn(),
+        getRunningPlugins: vi.fn(),
+        revealInFinder: vi.fn(),
+        getAllPlugins: vi.fn().mockResolvedValue([]),
+        launch
+      }
+    } as unknown as typeof window.ztools
+
+    const wrapper = mount(PluginActionsPanel, {
+      props: {
+        plugin: basePlugin
+      }
+    })
+
+    await wrapper.find('.actions-panel__commands-icon').trigger('click')
+    await flushPromises()
+
+    expect(launch).not.toHaveBeenCalled()
+    expect(document.body.querySelector('.el-dialog-stub')).toBeTruthy()
   })
 })

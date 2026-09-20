@@ -1,7 +1,13 @@
 import { computed, ref } from 'vue'
 import { logError, logInfo, logWarn } from '@/utils/logger'
 import {showErrorMessage} from '@/utils/message'
-import type { HostActionResult, HostInternalAccess } from '@/utils/host'
+import type {
+  HostActionResult,
+  HostInternalAccess,
+  HostLaunchOptions
+} from '@/utils/host'
+import { findInstalledPlugin } from '@/utils/host'
+import type { PluginCommandSelectPayload } from './components/PluginCommandsDialog'
 import type { DevelopmentPluginOverview } from '../../DevelopmentView'
 
 type PluginActionsPanelPlugin =
@@ -15,6 +21,7 @@ type PluginActionsPanelPlugin =
       | 'lastValidatedAt'
       | 'lastError'
       | 'isDevModeInstalled'
+      | 'logo'
     >
   | null
 
@@ -100,6 +107,14 @@ export function usePluginActionsPanel(props: PluginActionsPanelProps, emit: Plug
    * 打包 dialog 中填写的版本号（留空表示沿用 plugin.json 中的版本）。
    */
   const packageDialogVersion = ref('')
+  /**
+   * 指令列表 dialog 是否显示。
+   */
+  const isCommandsDialogVisible = ref(false)
+  /**
+   * 打开插件功能命令时的加载状态。
+   */
+  const isOpeningPlugin = ref(false)
   /**
    * 当前项目是否已安装开发模式。
    */
@@ -244,6 +259,19 @@ export function usePluginActionsPanel(props: PluginActionsPanelProps, emit: Plug
    * 修复配置动作是否应被禁用。
    */
   const isSelectConfigDisabled = computed(() => isSelectingConfig.value || !showSelectConfig.value)
+  /**
+   * 打开动作是否应被禁用（仅开发模式安装后可直接打开）。
+   */
+  const isOpenPluginDisabled = computed(
+    () => isOpeningPlugin.value || !isDevModeInstalled.value || !props.plugin?.path
+  )
+  /**
+   * 指令列表入口是否应被禁用（需要宿主提供 getAllPlugins 能力）。
+   */
+  const isCommandsEntryDisabled = computed(() => {
+    // @ts-ignore
+    return !window.ztools?.internal?.getAllPlugins || !props.plugin?.name
+  })
 
   /**
    * 解析当前动作卡片所使用的宿主接口。
@@ -366,6 +394,101 @@ export function usePluginActionsPanel(props: PluginActionsPanelProps, emit: Plug
   }
 
   /**
+   * 请求宿主打开 plugin.json 配置的首个功能命令。
+   */
+  async function handleOpenPlugin() {
+    if (!props.plugin?.path || isOpeningPlugin.value) {
+      return
+    }
+
+    const hostInternal = resolveHostInternal()
+
+    if (!hostInternal?.launch) {
+      logWarn('PluginActionsPanel', '打开插件', '宿主未提供 launch 能力')
+      showErrorMessage(undefined, '宿主服务不可用')
+      return
+    }
+
+    isOpeningPlugin.value = true
+    logInfo('PluginActionsPanel', '打开插件', `请求打开 ${props.plugin.name} 的首个功能命令`)
+
+    try {
+      const options: HostLaunchOptions = {
+        path: props.plugin.path,
+        type: 'plugin'
+      }
+      ensureActionSuccess(await hostInternal.launch(options), '打开插件失败')
+      logInfo('PluginActionsPanel', '打开插件', `已打开 ${props.plugin.name}`)
+    } catch (error) {
+      logError(
+        'PluginActionsPanel',
+        '打开插件',
+        `打开失败: ${error instanceof Error ? error.message : 'unknown error'}`
+      )
+      showErrorMessage(error, '打开插件失败')
+    } finally {
+      isOpeningPlugin.value = false
+    }
+  }
+
+  /**
+   * 打开当前插件的指令列表 dialog。
+   */
+  function handleShowCommands() {
+    if (isCommandsEntryDisabled.value) {
+      logWarn('PluginActionsPanel', '指令列表', '宿主未提供 getAllPlugins 能力')
+      showErrorMessage(undefined, '宿主服务不可用')
+      return
+    }
+
+    isCommandsDialogVisible.value = true
+  }
+
+  /**
+   * 从指令列表中选择文本指令后，请求宿主打开对应功能。
+   */
+  async function handleLaunchCommand(payload: PluginCommandSelectPayload) {
+    const { feature, cmd } = payload
+
+    if (!props.plugin?.path) {
+      return
+    }
+
+    const hostInternal = resolveHostInternal()
+
+    if (!hostInternal?.launch) {
+      logWarn('PluginActionsPanel', '打开指令', '宿主未提供 launch 能力')
+      showErrorMessage(undefined, '宿主服务不可用')
+      return
+    }
+
+    isCommandsDialogVisible.value = false
+    logInfo('PluginActionsPanel', '打开指令', `打开 ${props.plugin.name} 的功能 ${feature.code}`)
+
+    try {
+      const installed = await findInstalledPlugin(hostInternal, props.plugin.name)
+      const cmdLabel = typeof cmd === 'string' ? cmd : cmd.label || cmd.match || feature.explain || ''
+
+      const options: HostLaunchOptions = {
+        path: installed?.path || props.plugin.path,
+        type: 'plugin',
+        featureCode: feature.code,
+        name: cmdLabel,
+        cmdType: 'text',
+        param: { payload: '' }
+      }
+      ensureActionSuccess(await hostInternal.launch(options), '打开指令失败')
+    } catch (error) {
+      logError(
+        'PluginActionsPanel',
+        '打开指令',
+        `打开失败: ${error instanceof Error ? error.message : 'unknown error'}`
+      )
+      showErrorMessage(error, '打开指令失败')
+    }
+  }
+
+  /**
    * 请求宿主重新选择配置文件。
    */
   async function handleSelectConfig() {
@@ -484,6 +607,10 @@ export function usePluginActionsPanel(props: PluginActionsPanelProps, emit: Plug
     isDevModeInstalled,
     isOpenFolderDisabled: computed(() => isOpeningFolder.value || !canOpenFolder.value),
     isOpeningFolder,
+    isCommandsDialogVisible,
+    isCommandsEntryDisabled,
+    isOpeningPlugin,
+    isOpenPluginDisabled,
     isPackageDialogVisible,
     isPackageDisabled,
     isPackaging,
@@ -495,11 +622,14 @@ export function usePluginActionsPanel(props: PluginActionsPanelProps, emit: Plug
     selectConfigStatus,
     showMissingConfigBindingCard,
     showSelectConfig,
+    handleLaunchCommand,
     handleOpenFolder,
     handleOpenPackageDialog,
+    handleOpenPlugin,
     handlePackagePlugin,
     handleSelectConfig,
     handleSelectPackagePath,
+    handleShowCommands,
     handleToggleDevMode
   }
 }

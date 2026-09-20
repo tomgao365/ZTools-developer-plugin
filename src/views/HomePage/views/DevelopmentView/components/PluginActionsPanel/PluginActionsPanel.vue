@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {CardAtom, CardGroup, TextEllipsis} from '@/components'
 import MissingConfigBindingCard from './components/MissingConfigBindingCard'
+import PluginCommandsDialog from './components/PluginCommandsDialog'
 import type { PluginActionsPanelEmits, PluginActionsPanelProps } from './PluginActionsPanel'
 import { usePluginActionsPanel } from './PluginActionsPanel'
 
@@ -15,8 +16,12 @@ const {
   devModeTitle,
   isDevModeDisabled,
   isDevModeInstalled,
+  isOpenPluginDisabled,
   isOpenFolderDisabled,
   isOpeningFolder,
+  isOpeningPlugin,
+  isCommandsDialogVisible,
+  isCommandsEntryDisabled,
   isPackageDialogVisible,
   isPackageDisabled,
   isPackaging,
@@ -28,11 +33,14 @@ const {
   selectConfigStatus,
   showMissingConfigBindingCard,
   showSelectConfig,
+  handleLaunchCommand,
   handleOpenFolder,
   handleOpenPackageDialog,
+  handleOpenPlugin,
   handlePackagePlugin,
   handleSelectConfig,
   handleSelectPackagePath,
+  handleShowCommands,
   handleToggleDevMode
 } = usePluginActionsPanel(props, emit)
 </script>
@@ -114,6 +122,50 @@ const {
         </template>
       </CardAtom>
       <CardAtom
+        data-testid="open-plugin"
+        title="打开"
+        description="打开 plugin.json 配置的首个功能命令"
+        :status="isOpeningPlugin ? '打开中…' : ''"
+        :clickable="true"
+        :disabled="isOpenPluginDisabled"
+        class="actions-panel__card"
+        @click="handleOpenPlugin"
+      >
+        <template #icon>
+          <img
+            v-if="isDevModeInstalled && plugin?.logo"
+            :src="plugin.logo"
+            alt="插件图标"
+            class="actions-panel__open-logo"
+          />
+          <span
+            v-else
+            class="actions-panel__open-logo actions-panel__open-logo--fallback"
+            aria-hidden="true"
+          >{{ plugin?.title?.charAt(0) || 'U' }}</span>
+        </template>
+        <template #status>
+          <span
+            v-if="isCommandsEntryDisabled"
+            class="actions-panel__commands-icon actions-panel__commands-icon--disabled"
+            title="宿主未提供指令列表能力"
+          >
+            <span class="i-z-list" aria-hidden="true" />
+          </span>
+          <span
+            v-else
+            class="actions-panel__commands-icon"
+            role="button"
+            tabindex="0"
+            title="查看指令列表"
+            @click.stop="handleShowCommands"
+            @keydown.enter.stop.prevent="handleShowCommands"
+          >
+            <span class="i-z-list" aria-hidden="true" />
+          </span>
+        </template>
+      </CardAtom>
+      <CardAtom
         v-if="showSelectConfig"
         title="选择配置文件"
         :description="selectConfigDescription"
@@ -136,6 +188,14 @@ const {
       />
     </CardGroup>
   </div>
+
+  <!-- 指令列表 dialog -->
+  <PluginCommandsDialog
+    :visible="isCommandsDialogVisible"
+    :plugin="plugin ? { name: plugin.name, title: plugin.title } : null"
+    @update:visible="isCommandsDialogVisible = $event"
+    @select="handleLaunchCommand"
+  />
 
   <!-- 打包配置 dialog -->
   <el-dialog
@@ -265,6 +325,51 @@ const {
   left: 6px;
   width: 2px;
   height: 14px;
+}
+
+.actions-panel__open-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.actions-panel__open-logo--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--u-color-fill-3);
+  color: var(--u-color-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.actions-panel__commands-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--u-color-text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.actions-panel__commands-icon:hover {
+  background: var(--u-color-fill-3);
+  color: var(--u-color-primary-6);
+}
+
+.actions-panel__commands-icon--disabled {
+  color: var(--u-color-text-3);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions-panel__commands-icon--disabled:hover {
+  background: transparent;
+  color: var(--u-color-text-3);
 }
 
 .package-dialog__path-row {

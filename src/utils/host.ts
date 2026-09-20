@@ -98,6 +98,10 @@ export interface HostInternalAccess extends HostAccess {
   scaffoldDevProject?(params: ScaffoldDevProjectParams): Promise<ScaffoldDevProjectResult>
   /** 更新开发项目的登记元数据。 */
   updateDevProjectMeta?(projectName: string, meta: { title?: string; description?: string; platform?: string[]; author?: string }): Promise<HostActionResult>
+  /** 获取宿主已安装的全部插件（含动态功能与归一化图标）。 */
+  getAllPlugins?(): Promise<HostInstalledPlugin[]>
+  /** 请求宿主打开指定插件或插件的某个功能命令。 */
+  launch?(options: HostLaunchOptions): Promise<HostActionResult | void>
 }
 
 /** 从模板创建开发项目时使用的表单参数。 */
@@ -113,6 +117,90 @@ export interface ScaffoldDevProjectParams {
 
 /** 创建并导入开发项目后的操作结果。 */
 export type ScaffoldDevProjectResult = HostActionResult & { pluginName?: string }
+
+/**
+ * 宿主插件注册表中开发模式安装插件的名称后缀。
+ */
+export const DEV_PLUGIN_SUFFIX = '__dev'
+
+/**
+ * plugin.json 中 features[].cmds 支持的指令形态。
+ */
+export type HostPluginCmd =
+  | string
+  | {
+      type?: string
+      label?: string
+      match?: string
+      regex?: string
+      minLength?: number
+      maxLength?: number
+      fileType?: string
+      extensions?: string[]
+    }
+
+/**
+ * 宿主插件注册表中的功能指令定义。
+ */
+export interface HostPluginFeature {
+  /** 功能唯一编码，打开指定功能时作为 featureCode 传给宿主。 */
+  code: string
+  /** 功能说明文案。 */
+  explain?: string
+  /** 功能图标（宿主已归一化为可访问路径）。 */
+  icon?: string
+  /** 触发该功能的指令列表。 */
+  cmds: HostPluginCmd[]
+}
+
+/**
+ * 宿主 getAllPlugins 返回的已安装插件记录（仅声明本插件用到的字段）。
+ */
+export interface HostInstalledPlugin {
+  name: string
+  title: string
+  path: string
+  logo?: string
+  features?: HostPluginFeature[]
+  isDevelopment?: boolean
+}
+
+/**
+ * 宿主 internal.launch 打开插件功能时使用的参数。
+ */
+export interface HostLaunchOptions {
+  /** 插件物理路径。 */
+  path: string
+  type: 'plugin'
+  /** 功能编码；缺省时由宿主选择 plugin.json 配置的首个功能命令。 */
+  featureCode?: string
+  /** 展示用的指令名称。 */
+  name?: string
+  /** 指令类型。 */
+  cmdType?: string
+  /** 启动携带的参数。 */
+  param?: { payload?: unknown; type?: string }
+}
+
+/**
+ * 在宿主已安装插件列表中查找开发项目对应的安装记录。
+ * 开发模式安装后的实际名称为 `基础名 + __dev`，同时兼容按基础名匹配。
+ */
+export async function findInstalledPlugin(
+  host: HostInternalAccess | undefined,
+  pluginName: string
+): Promise<HostInstalledPlugin | null> {
+  if (!host?.getAllPlugins) {
+    return null
+  }
+
+  const plugins = await host.getAllPlugins()
+  return (
+    plugins.find((item) => item.name === `${pluginName}${DEV_PLUGIN_SUFFIX}`) ??
+    plugins.find((item) => item.name === pluginName) ??
+    null
+  )
+}
 
 /**
  * 本地开发与测试阶段使用的兜底插件数据。
